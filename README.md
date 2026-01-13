@@ -20,7 +20,7 @@ Registers a new student.
 
 **Request Body (JSON):**
 
-``` json
+```json
 {
   "username": "Sanjay",
   "email": "sanjay@gmail.com",
@@ -33,7 +33,7 @@ Registers a new student.
 
 **Response:**
 
-``` json
+```json
 {
   "message": "User registered successfully"
 }
@@ -49,7 +49,7 @@ Authenticates a user and returns JWT.
 
 **Request Body (JSON):**
 
-``` json
+```json
 {
   "email": "sanjay@gmail.com",
   "password": "123456"
@@ -58,7 +58,7 @@ Authenticates a user and returns JWT.
 
 **Response:**
 
-``` json
+```json
 {
   "access_token": "JWT_TOKEN_HERE"
 }
@@ -72,7 +72,7 @@ Authenticates a user and returns JWT.
 
 **Response:**
 
-``` json
+```json
 {
   "message": "Logged out successfully"
 }
@@ -84,14 +84,14 @@ Authenticates a user and returns JWT.
 
 ### 📄 4. Get Profile
 
-**GET** `/profile`\
+**GET** `/profile`  
 **Headers:**
 
     Authorization: Bearer <JWT_TOKEN>
 
 **Response:**
 
-``` json
+```json
 {
   "username": "Sanjay",
   "email": "sanjay@gmail.com",
@@ -105,14 +105,14 @@ Authenticates a user and returns JWT.
 
 ### ✏️ 5. Update Profile
 
-**PUT** `/update-profile`\
+**PUT** `/update-profile`  
 **Headers:**
 
     Authorization: Bearer <JWT_TOKEN>
 
 **Request Body (JSON):**
 
-``` json
+```json
 {
   "class": "11",
   "group": "Biology"
@@ -121,7 +121,7 @@ Authenticates a user and returns JWT.
 
 **Response:**
 
-``` json
+```json
 {
   "message": "Profile updated"
 }
@@ -171,7 +171,7 @@ or:
 
 **Response:**
 
-``` json
+```json
 {
   "document_id": "f4b1c2c1-92ab-4d71-acde-cc44a20fa9e0"
 }
@@ -183,20 +183,20 @@ or:
 
 ### 📥 10. Upload Book / Notes
 
-**POST** `/upload`\
+**POST** `/upload`  
 **Form Data:**
 
-  Key       Type   Value
-  --------- ------ -------------
-  file      File   biology.pdf
-  class     Text   10
-  board     Text   stateboard
-  subject   Text   Biology
-  group     Text   (optional)
+| Key     | Type | Value         |
+|--------|------|---------------|
+| file   | File | biology.pdf   |
+| class  | Text | 10            |
+| board  | Text | stateboard    |
+| subject| Text | Biology       |
+| group  | Text | (optional)    |
 
 **Response:**
 
-``` json
+```json
 {
   "message": "Document uploaded",
   "document_id": "f4b1c2c1-92ab-4d71-acde-cc44a20fa9e0"
@@ -227,7 +227,7 @@ or:
 
 **Request Body (JSON):**
 
-``` json
+```json
 {
   "email": "sanjay@gmail.com",
   "subject": "Biology",
@@ -237,7 +237,7 @@ or:
 
 **Response:**
 
-``` json
+```json
 {
   "document_id": "f4b1c2c1-92ab-4d71-acde-cc44a20fa9e0",
   "answer": "Photosynthesis is the process by which green plants make their own food using sunlight..."
@@ -246,7 +246,7 @@ or:
 
 If the answer is not in the document:
 
-``` json
+```json
 {
   "document_id": "f4b1c2c1-92ab-4d71-acde-cc44a20fa9e0",
   "answer": "Answer not found in the document."
@@ -255,9 +255,77 @@ If the answer is not in the document:
 
 ------------------------------------------------------------------------
 
+## 📝 Personal Notes (User Documents)
+
+### 📤 14. Upload User Notes
+
+**POST** `/upload-user`  
+Allows a student to upload personal notes for self-study.
+
+**Form Data:**
+
+| Key   | Type | Value             |
+|-------|------|-------------------|
+| file  | File | my_notes.pdf      |
+| email | Text | sanjay@gmail.com  |
+
+**Response:**
+
+```json
+{
+  "message": "User document uploaded",
+  "document_id": "a12b45d9-90cd-4fa1-bc10-abc2349de001"
+}
+```
+
+------------------------------------------------------------------------
+
+### 📂 15. List User Documents
+
+**GET** `/user/documents?email=sanjay@gmail.com`
+
+**Response:**
+
+```json
+[
+  {
+    "document_id": "a12b45d9-90cd-4fa1-bc10-abc2349de001",
+    "filename": "my_notes.pdf",
+    "uploaded_at": "2026-01-13T15:20:45Z"
+  }
+]
+```
+
+------------------------------------------------------------------------
+
+### 🤖 16. Ask From Personal Notes
+
+**POST** `/ask-user`
+
+**Request Body (JSON):**
+
+```json
+{
+  "email": "sanjay@gmail.com",
+  "document_id": "a12b45d9-90cd-4fa1-bc10-abc2349de001",
+  "query": "Explain Newton's second law from my notes"
+}
+```
+
+**Response:**
+
+```json
+{
+  "document_id": "a12b45d9-90cd-4fa1-bc10-abc2349de001",
+  "answer": "According to Newton's second law, the acceleration of an object is directly proportional to the net force acting on it..."
+}
+```
+
+------------------------------------------------------------------------
+
 ## 🌍 Deployment
 
-Hosted on **AWS EC2** with Nginx + systemd\
+Hosted on **AWS EC2** with Nginx + systemd  
 Base URL:
 
     http://13.60.138.201
