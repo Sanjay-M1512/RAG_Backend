@@ -1,6 +1,6 @@
 import os
 import uuid
-from datetime import timedelta
+from datetime import timedelta, datetime
 from flask import Flask, request, jsonify
 from flask_jwt_extended import (
     JWTManager, create_access_token,
@@ -42,7 +42,8 @@ db = client["RAG"]
 users_col = db["users"]
 stateboard_col = db["stateboard"]
 cbse_col = db["cbse"]
-documents_col = db["documents"]
+documents_col = db["documents"]              # Syllabus docs
+user_documents_col = db["user_documents"]    # 🔹 NEW: User uploaded docs
 
 # -----------------------------
 # Pinecone Init (NEW SDK)
@@ -69,7 +70,6 @@ groq_client = Groq(api_key=GROQ_API_KEY)
 # -----------------------------
 # Utilities (RAG)
 # -----------------------------
-
 def load_document(file_path):
     text = ""
     if file_path.endswith(".pdf"):
@@ -103,10 +103,9 @@ def get_embedding(text):
 def store_chunks(chunks, document_id):
     vectors = []
     for i, chunk in enumerate(chunks):
-        embedding = get_embedding(chunk)
         vectors.append({
             "id": f"{document_id}-{i}",
-            "values": embedding,
+            "values": get_embedding(chunk),
             "metadata": {
                 "text": chunk,
                 "document_id": document_id
@@ -158,7 +157,6 @@ Answer:
 # -----------------------------
 # AUTH
 # -----------------------------
-
 @app.route("/signup", methods=["POST"])
 def signup():
     data = request.json
@@ -197,9 +195,8 @@ def logout():
     return jsonify({"message": "Logged out successfully"})
 
 # -----------------------------
-# USER PROFILE (JWT ONLY HERE)
+# USER PROFILE (JWT ONLY)
 # -----------------------------
-
 @app.route("/profile", methods=["GET"])
 @jwt_required()
 def profile():
@@ -227,7 +224,6 @@ def update_profile():
 # -----------------------------
 # CURRICULUM (PUBLIC)
 # -----------------------------
-
 @app.route("/stateboard", methods=["GET"])
 def stateboard():
     class_ = request.args.get("class")
@@ -266,7 +262,6 @@ def groups():
 # -----------------------------
 # SUBJECT → DOCUMENT (PUBLIC)
 # -----------------------------
-
 @app.route("/subject-document", methods=["GET"])
 def subject_document():
     board = request.args.get("board")
@@ -287,19 +282,22 @@ def subject_document():
     return jsonify({"document_id": record["document_id"]})
 
 # -----------------------------
-# UPLOAD (PUBLIC)
+# USER DOCUMENT UPLOAD (NEW)
 # -----------------------------
-
-@app.route("/upload", methods=["POST"])
-def upload():
+@app.route("/upload-user", methods=["POST"])
+def upload_user_document():
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
     file = request.files["file"]
-    class_ = request.form.get("class")
-    board = request.form.get("board")
-    subject = request.form.get("subject")
-    group = request.form.get("group")
+    email = request.form.get("email")
+
+    if not email:
+        return jsonify({"error": "email is required"}), 400
+
+    user = users_col.find_one({"email": email})
+    if not user:
+        return jsonify({"error": "User not found"}), 404
 
     os.makedirs("uploads", exist_ok=True)
     path = os.path.join("uploads", file.filename)
@@ -311,62 +309,90 @@ def upload():
     document_id = str(uuid.uuid4())
     store_chunks(chunks, document_id)
 
-    documents_col.insert_one({
+    user_documents_col.insert_one({
         "document_id": document_id,
         "filename": file.filename,
-        "class": class_,
-        "board": board,
-        "subject": subject,
-        "group": group
+        "uploaded_by": {
+            "email": email,
+            "user_id": str(user["_id"])
+        },
+        "uploaded_at": datetime.utcnow()
     })
 
-    target_col = stateboard_col if board == "stateboard" else cbse_col
-    target_col.insert_one({
-        "class": class_,
-        "subject": subject,
-        "group": group,
+    return jsonify({
+        "message": "User document uploaded successfully",
         "document_id": document_id
     })
 
-    return jsonify({"message": "Document uploaded", "document_id": document_id})
-
 # -----------------------------
-# DOCUMENT MANAGEMENT (PUBLIC)
+# LIST USER DOCUMENTS
 # -----------------------------
+@app.route("/user/documents", methods=["GET"])
+def get_user_documents():
+    email = request.args.get("email")
 
-@app.route("/documents", methods=["GET"])
-def documents():
-    docs = documents_col.find({}, {"_id": 0})
+    if not email:
+        return jsonify({"error": "email is required"}), 400
+
+    docs = user_documents_col.find(
+        {"uploaded_by.email": email},
+        {"_id": 0}
+    )
+
     return jsonify(list(docs))
 
+# -----------------------------
+# ASK USER DOCUMENT (NEW)
+# -----------------------------
+@app.route("/ask-user", methods=["POST"])
+def ask_user_document():
+    data = request.json
 
-@app.route("/document/<document_id>", methods=["DELETE"])
-def delete_document(document_id):
-    documents_col.delete_one({"document_id": document_id})
-    stateboard_col.delete_many({"document_id": document_id})
-    cbse_col.delete_many({"document_id": document_id})
+    email = data.get("email")
+    document_id = data.get("document_id")
+    query = data.get("query")
 
-    index.delete(filter={"document_id": {"$eq": document_id}})
-    return jsonify({"message": "Document deleted"})
+    if not email or not document_id or not query:
+        return jsonify({
+            "error": "email, document_id, and query are required"
+        }), 400
+
+    user = users_col.find_one({"email": email})
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    doc = user_documents_col.find_one({
+        "document_id": document_id,
+        "uploaded_by.email": email
+    })
+
+    if not doc:
+        return jsonify({"error": "You do not have access to this document"}), 403
+
+    retrieved_chunks = query_document(query, document_id)
+    answer = generate_answer(query, retrieved_chunks)
+
+    return jsonify({
+        "document_id": document_id,
+        "answer": answer
+    })
 
 # -----------------------------
-# ASK (PUBLIC RAG)
+# ASK (SYLLABUS RAG)
 # -----------------------------
-
 @app.route("/ask", methods=["POST"])
 def ask():
     data = request.json
 
-    email = data.get("email")        # Identify the user
-    subject = data.get("subject")   # Subject chosen by student
-    prompt = data.get("query")      # Question
+    email = data.get("email")
+    subject = data.get("subject")
+    prompt = data.get("query")
 
     if not email or not subject or not prompt:
         return jsonify({
             "error": "email, subject, and query are required"
         }), 400
 
-    # 1️⃣ Get user profile
     user = users_col.find_one({"email": email})
     if not user:
         return jsonify({"error": "User not found"}), 404
@@ -377,7 +403,6 @@ def ask():
     if user_group:
         user_group = user_group.strip()
 
-    # 2️⃣ Choose correct board collection
     if user_board == "stateboard":
         col = stateboard_col
     elif user_board == "cbse":
@@ -385,7 +410,6 @@ def ask():
     else:
         return jsonify({"error": "Invalid board in user profile"}), 400
 
-    # 3️⃣ Build syllabus query (STRICT MATCH)
     query = {
         "class": user_class,
         "subject": subject.strip()
@@ -394,25 +418,17 @@ def ask():
     if user_group:
         query["group"] = user_group
 
-    # 4️⃣ Fetch document mapping
     record = col.find_one(query)
-
     if not record:
         return jsonify({
             "document_id": None,
-            "answer": "Answer not found in the document.",
-            "debug": {
-                "used_query": query
-            }
+            "answer": "Answer not found in the document."
         })
 
     document_id = record["document_id"]
-
-    # 5️⃣ Run your existing RAG pipeline
     retrieved_chunks = query_document(prompt, document_id)
     answer = generate_answer(prompt, retrieved_chunks)
 
-    # 6️⃣ Return both document_id and answer
     return jsonify({
         "document_id": document_id,
         "answer": answer
@@ -421,6 +437,5 @@ def ask():
 # -----------------------------
 # RUN
 # -----------------------------
-
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
