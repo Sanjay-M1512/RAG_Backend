@@ -40,6 +40,7 @@ client = MongoClient(MONGO_URI)
 db = client["RAG"]
 
 users_col = db["users"]
+user2_col = db["user2"]
 stateboard_col = db["stateboard"]
 cbse_col = db["cbse"]
 documents_col = db["documents"]              # Syllabus docs
@@ -433,6 +434,157 @@ def ask():
         "document_id": document_id,
         "answer": answer
     })
+
+# ============================================================
+# 🔐 USER2 AUTH (NORMAL USER)
+# ============================================================
+
+@app.route("/user2/register", methods=["POST"])
+def user2_register():
+    data = request.json
+
+    if user2_col.find_one({"email": data["email"]}):
+        return jsonify({"error": "User already exists"}), 400
+
+    user = {
+        "email": data["email"],
+        "password": data["password"],   # ⚠ Hash in production
+        "role": "user2"
+    }
+
+    user2_col.insert_one(user)
+    return jsonify({"message": "User2 registered successfully"}), 201
+
+
+@app.route("/user2/login", methods=["POST"])
+def user2_login():
+    data = request.json
+
+    user = user2_col.find_one({
+        "email": data["email"],
+        "password": data["password"]
+    })
+
+    if not user:
+        return jsonify({"error": "Invalid credentials"}), 401
+
+    token = create_access_token(identity=str(user["_id"]))
+    return jsonify({"access_token": token})
+
+
+@app.route("/user2/logout", methods=["POST"])
+def user2_logout():
+    return jsonify({"message": "Logged out successfully"})
+
+
+# ============================================================
+# 👤 USER2 PROFILE (JWT REQUIRED ONLY HERE)
+# ============================================================
+
+@app.route("/user2/profile", methods=["GET"])
+@jwt_required()
+def user2_profile():
+    user_id = get_jwt_identity()
+    user = user2_col.find_one({"_id": ObjectId(user_id)})
+
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    return jsonify({
+        "email": user["email"],
+        "role": user["role"]
+    })
+
+
+@app.route("/user2/update-profile", methods=["PUT"])
+@jwt_required()
+def user2_update_profile():
+    user_id = get_jwt_identity()
+    data = request.json
+
+    user2_col.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": data}
+    )
+
+    return jsonify({"message": "Profile updated successfully"})
+
+
+# ============================================================
+# 🗑 USER2 DELETE THEIR OWN DOCUMENT
+# ============================================================
+
+@app.route("/user2/document/<document_id>", methods=["DELETE"])
+@jwt_required()
+def delete_user2_document(document_id):
+    user_id = get_jwt_identity()
+
+    doc = user_documents_col.find_one({
+        "document_id": document_id,
+        "uploaded_by.user_id": user_id
+    })
+
+    if not doc:
+        return jsonify({"error": "Document not found or not owned by user"}), 404
+
+    user_documents_col.delete_one({"document_id": document_id})
+
+    # Remove from Pinecone
+    index.delete(filter={"document_id": {"$eq": document_id}})
+
+    return jsonify({"message": "User document deleted successfully"})
+
+
+# ============================================================
+# ✏️ STUDENT: UPDATE THEIR OWN DOCUMENT
+# ============================================================
+
+@app.route("/update-document/<document_id>", methods=["PUT"])
+@jwt_required()
+def update_student_document(document_id):
+    user_id = get_jwt_identity()
+    data = request.json
+
+    doc = user_documents_col.find_one({
+        "document_id": document_id,
+        "uploaded_by.user_id": user_id
+    })
+
+    if not doc:
+        return jsonify({"error": "Document not found or not owned by user"}), 404
+
+    user_documents_col.update_one(
+        {"document_id": document_id},
+        {"$set": data}
+    )
+
+    return jsonify({"message": "User document updated successfully"})
+
+
+# ============================================================
+# 🗑 STUDENT: DELETE THEIR OWN DOCUMENT
+# ============================================================
+
+@app.route("/delete-user-document/<document_id>", methods=["DELETE"])
+@jwt_required()
+def delete_student_document(document_id):
+    user_id = get_jwt_identity()
+
+    doc = user_documents_col.find_one({
+        "document_id": document_id,
+        "uploaded_by.user_id": user_id
+    })
+
+    if not doc:
+        return jsonify({"error": "Document not found or not owned by user"}), 404
+
+    user_documents_col.delete_one({"document_id": document_id})
+
+    # Remove from Pinecone
+    index.delete(filter={"document_id": {"$eq": document_id}})
+
+    return jsonify({"message": "User document deleted successfully"})
+
 
 # -----------------------------
 # RUN
