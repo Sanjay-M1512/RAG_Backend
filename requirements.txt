@@ -8,3 +8,4 @@ sentence-transformers
 groq
 pinecone-client
 gunicorn
+flask_cors
