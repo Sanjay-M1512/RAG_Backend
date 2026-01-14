@@ -14,6 +14,7 @@ import docx
 from sentence_transformers import SentenceTransformer
 from groq import Groq
 from pinecone import Pinecone
+from flask_cors import CORS
 
 # -----------------------------
 # Load ENV
@@ -32,6 +33,9 @@ app = Flask(__name__)
 app.config["JWT_SECRET_KEY"] = JWT_SECRET_KEY
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=1)
 jwt = JWTManager(app)
+
+# ✅ Enable CORS for all routes and all origins
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # -----------------------------
 # MongoDB Init
