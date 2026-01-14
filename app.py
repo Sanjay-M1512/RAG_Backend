@@ -296,9 +296,20 @@ def upload_user_document():
     if not email:
         return jsonify({"error": "email is required"}), 400
 
+    # 🔍 Check in both collections: students and normal users
     user = users_col.find_one({"email": email})
-    if not user:
+    user2 = user2_col.find_one({"email": email})
+
+    if not user and not user2:
         return jsonify({"error": "User not found"}), 404
+
+    # 🧠 Identify uploader
+    if user:
+        uploader_id = str(user["_id"])
+        role = "student"
+    else:
+        uploader_id = str(user2["_id"])
+        role = "user2"
 
     os.makedirs("uploads", exist_ok=True)
     path = os.path.join("uploads", file.filename)
@@ -315,7 +326,8 @@ def upload_user_document():
         "filename": file.filename,
         "uploaded_by": {
             "email": email,
-            "user_id": str(user["_id"])
+            "user_id": uploader_id,
+            "role": role
         },
         "uploaded_at": datetime.utcnow()
     })
@@ -324,6 +336,7 @@ def upload_user_document():
         "message": "User document uploaded successfully",
         "document_id": document_id
     })
+
 
 # -----------------------------
 # LIST USER DOCUMENTS
@@ -358,18 +371,33 @@ def ask_user_document():
             "error": "email, document_id, and query are required"
         }), 400
 
+    # 🔍 Check user in both collections
     user = users_col.find_one({"email": email})
-    if not user:
+    user2 = user2_col.find_one({"email": email})
+
+    if not user and not user2:
         return jsonify({"error": "User not found"}), 404
 
+    # 🧠 Identify requester
+    if user:
+        user_id = str(user["_id"])
+        role = "student"
+    else:
+        user_id = str(user2["_id"])
+        role = "user2"
+
+    # 🔐 Verify document ownership
     doc = user_documents_col.find_one({
         "document_id": document_id,
-        "uploaded_by.email": email
+        "uploaded_by.email": email,
+        "uploaded_by.user_id": user_id,
+        "uploaded_by.role": role
     })
 
     if not doc:
         return jsonify({"error": "You do not have access to this document"}), 403
 
+    # 🤖 Run RAG on user's own document
     retrieved_chunks = query_document(query, document_id)
     answer = generate_answer(query, retrieved_chunks)
 
@@ -377,6 +405,7 @@ def ask_user_document():
         "document_id": document_id,
         "answer": answer
     })
+
 
 # -----------------------------
 # ASK (SYLLABUS RAG)
