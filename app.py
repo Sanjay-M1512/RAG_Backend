@@ -77,17 +77,28 @@ groq_client = Groq(api_key=GROQ_API_KEY)
 # -----------------------------
 def load_document(file_path):
     text = ""
+
     if file_path.endswith(".pdf"):
         reader = PdfReader(file_path)
-        for page in reader.pages:
-            text += page.extract_text() or ""
+
+        for i, page in enumerate(reader.pages):
+            try:
+                extracted = page.extract_text()
+                if extracted:
+                    text += extracted + "\n"
+            except Exception as e:
+                print(f"[PDF WARNING] Skipping page {i}: {e}")
+                continue
+
     elif file_path.endswith(".docx"):
         doc = docx.Document(file_path)
         for para in doc.paragraphs:
             text += para.text + "\n"
+
     elif file_path.endswith(".txt"):
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
             text = f.read()
+
     return text
 
 
