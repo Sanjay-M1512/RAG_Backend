@@ -36,7 +36,7 @@ jwt = JWTManager(app)
 
 # ✅ Enable CORS for all routes and all origins
 CORS(app, resources={r"/*": {"origins": "*"}})
-
+app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024  # 200MB
 # -----------------------------
 # MongoDB Init
 # -----------------------------
